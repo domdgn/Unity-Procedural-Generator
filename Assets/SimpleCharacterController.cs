@@ -23,7 +23,7 @@ public class SimpleCharacterController : MonoBehaviour
         {
             GameObject camObj = new GameObject("PlayerCamera");
             camObj.transform.parent = transform;
-            camObj.transform.localPosition = new Vector3(0, 1.6f, 0); // Approximate head height
+            camObj.transform.localPosition = new Vector3(0, 1f, 0); // Approximate head height
             playerCamera = camObj.AddComponent<Camera>();
         }
 

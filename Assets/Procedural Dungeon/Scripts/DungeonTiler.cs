@@ -6,90 +6,124 @@ public class DungeonTiler : MonoBehaviour
 {
     public GameObject masterPrefab;
     public int maxRooms = 10;
+    public int maxFailedAttempts = 25;
+    int failedAttempts = 0;
     
     private List<GameObject> placedRooms = new List<GameObject>();
 
     private void Start()
     {
+        Debug.Log("=== STARTING DUNGEON GENERATION ===");
         GenerateDungeon();
     }
 
     void GenerateDungeon()
     {
+        Debug.Log("Creating first room...");
         GameObject firstRoom = Instantiate(masterPrefab, Vector3.zero, Quaternion.identity);
         placedRooms.Add(firstRoom);
+        Debug.Log($"First room placed. Starting generation of {maxRooms - 1} additional rooms");
 
-        for (int i = 1; i < maxRooms; i++)
+        int currentRooms = 1;
+
+        while(currentRooms < maxRooms && failedAttempts < maxFailedAttempts)
         {
-            PlaceNextRoom();
+            if (PlaceNextRoom())
+            {
+                currentRooms++;
+                Debug.Log($"Placed room {currentRooms}/{maxRooms}");
+            }
+            else
+            {
+                failedAttempts++;
+                Debug.LogWarning($"Failed attempt {failedAttempts}/{maxFailedAttempts}");
+            }
         }
     }
 
-    void PlaceNextRoom()
+    bool PlaceNextRoom()
     {
-        GameObject sourceRoom = placedRooms[Random.Range(0, placedRooms.Count)];
+        int maxAttempts = 10;
 
-        Transform[] allSourceChildren = sourceRoom.GetComponentsInChildren<Transform>();
-
-        List<Transform> entryPoints = new List<Transform>();
-
-        foreach (Transform child in allSourceChildren)
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
-            if (child.CompareTag("Entry"))
+            GameObject sourceRoom = placedRooms[Random.Range(0, placedRooms.Count)];
+            Transform[] allSourceChildren = sourceRoom.GetComponentsInChildren<Transform>();
+
+            List<Transform> entryPoints = new List<Transform>();
+
+            foreach (Transform child in allSourceChildren)
             {
-                EntryPoint entryScript = child.GetComponent<EntryPoint>();
-                if (entryScript != null && entryScript.isConnected)
+                if (child.CompareTag("Entry"))
                 {
-                    continue;
+                    EntryPoint entryScript = child.GetComponent<EntryPoint>();
+                    if (entryScript != null && !entryScript.isConnected)
+                    {
+                        entryPoints.Add(child);
+                    }          
                 }
-
-                entryPoints.Add(child);
             }
-        }
 
-        Debug.Log("Total entry points found: " + entryPoints.Count);
-
-        if (entryPoints.Count == 0)
-        {
-            Debug.LogWarning("No entry points found in the source room.");
-            return;
-        }
-
-        Transform sourceEntryPoint = entryPoints[Random.Range(0, entryPoints.Count)];
-
-        GameObject nextRoom = Instantiate(masterPrefab);
-        Transform[] allNextChildren = nextRoom.GetComponentsInChildren<Transform>();
-
-        List<Transform> nextEntryPoints = new List<Transform>();
-
-        foreach (Transform child in allNextChildren)
-        {
-            if (child.CompareTag("Entry"))
+            if (entryPoints.Count == 0)
             {
-                nextEntryPoints.Add(child);
+                Debug.LogWarning("No entry points found in the source room.");
+                continue;
+            }
+
+            Transform sourceEntryPoint = entryPoints[Random.Range(0, entryPoints.Count)];
+            GameObject nextRoom = Instantiate(masterPrefab);
+
+            Transform[] allNextChildren = nextRoom.GetComponentsInChildren<Transform>();
+
+            List<Transform> nextEntryPoints = new List<Transform>();
+
+            foreach (Transform child in allNextChildren)
+            {
+                if (child.CompareTag("Entry"))
+                {
+                    nextEntryPoints.Add(child);
+                }
+            }
+
+            if (nextEntryPoints.Count == 0)
+            {
+                Destroy(nextRoom);
+                continue;
+            }
+
+            Transform nextEntryPoint = nextEntryPoints[Random.Range(0, nextEntryPoints.Count)];
+
+            nextRoom.transform.localRotation = Quaternion.LookRotation(-sourceEntryPoint.localPosition, Vector3.up);
+
+            Vector3 offset = sourceEntryPoint.position - nextEntryPoint.position;
+            nextRoom.transform.position += offset;
+
+            if (IsRoomOverlapping(nextRoom, sourceRoom))
+            {
+                Destroy(nextRoom);
+                Debug.LogWarning($"Room overlap detected at {nextRoom.transform.position}");
+                continue;
+            }
+
+            Debug.Log($"Successfully placed room at {nextRoom.transform.position}");
+            sourceEntryPoint.GetComponent<EntryPoint>().isConnected = true;
+            nextEntryPoint.GetComponent<EntryPoint>().isConnected = true;
+            placedRooms.Add(nextRoom);
+            return true;
+        }
+        Debug.LogWarning("Failed to place room after maximum attempts");
+        return false;
+    }
+
+    private bool IsRoomOverlapping(GameObject nextRoom, GameObject sourceRoom)
+    {
+        foreach (GameObject placedRoom in placedRooms)
+        {
+            if (nextRoom.GetComponent<BoxCollider>().bounds.Intersects(placedRoom.GetComponent<BoxCollider>().bounds))
+            {
+                return true;
             }
         }
-        Debug.Log("Total next entry points found: " + nextEntryPoints.Count);
-
-        if (nextEntryPoints.Count == 0)
-        {
-            Debug.LogWarning("No entry points found in the next room.");
-            return;
-        }
-
-        Transform nextEntryPoint = nextEntryPoints[Random.Range(0, nextEntryPoints.Count)];
-
-        nextRoom.transform.rotation = Quaternion.LookRotation(-sourceEntryPoint.forward, Vector3.up);
-
-        Vector3 offset = sourceEntryPoint.position - nextEntryPoint.position;
-        nextRoom.transform.position += offset;
-
-        EntryPoint sourceEntryScript = sourceEntryPoint.GetComponent<EntryPoint>();
-        EntryPoint nextEntryScript = nextEntryPoint.GetComponent<EntryPoint>();
-
-        sourceEntryScript.isConnected = true;
-        nextEntryScript.isConnected = true;
-
-        placedRooms.Add(nextRoom);
+        return false;
     }
 }
